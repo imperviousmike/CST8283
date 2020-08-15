@@ -1,0 +1,217 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. PROJECT2.
+       AUTHOR. Michael Daly.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT  SUPPLIERS-IN
+                   ASSIGN TO "/home/mike/SUPPLIERS.txt"
+                   ORGANIZATION IS LINE SEQUENTIAL.
+           SELECT  INVENT-IN
+                   ASSIGN TO "/home/mike/INVENT.txt"
+                   ORGANIZATION IS LINE SEQUENTIAL.
+           SELECT  INVENT-REPORT
+                   ASSIGN TO "/home/mike/INVREPRT.txt"
+                   ORGANIZATION IS LINE SEQUENTIAL.
+           SELECT  INVENT-REORDER
+                   ASSIGN TO "/home/mike/REORDER.txt"
+                   ORGANIZATION IS LINE SEQUENTIAL.
+
+       DATA DIVISION.
+       FILE SECTION.
+       FD  SUPPLIERS-IN
+           DATA RECORD IS SUPPLIER-RECORD.
+       01  SUPPLIER-RECORD.
+           05  SUPPLIER-CODE-IN     PIC X(5).
+           05  SUPPLIER-NAME-IN     PIC X(15).
+       FD  INVENT-IN
+           DATA RECORD IS INVENTORY-RECORD.
+       01  INVENTORY-RECORD.
+           05  PART-NUMBER-IN       PIC 9(5).
+           05  PART-NAME-IN         PIC X(20).
+           05  QUANTITY-IN          PIC 9(3).
+           05  UNIT-PRICE-IN        PIC 9(2)V99.
+           05  SUPPLIER-ID-IN       PIC X(5).
+           05  REORDER-POINT-IN     PIC 9(3).
+
+       FD  INVENT-REPORT
+           DATA RECORD IS INVENTORY-OUT.
+       01  INVENTORY-OUT           PIC X(60).
+
+       FD  INVENT-REORDER
+           DATA RECORD IS REORDER-OUT.
+       01  REORDER-OUT             PIC X(70).
+       WORKING-STORAGE SECTION.
+       01  SUPPLIER-TABLE.
+           05  SUPPLIER-TABLE-LEN  PIC 9(3).
+           05  SUPPLIER-TAB        OCCURS 1 TO 999
+                                   DEPENDING ON SUPPLIER-TABLE-LEN.
+               10  SUPPLIER-CODE   PIC X(05).
+               10  SUPPLIER-NAME   PIC X(15).
+       01  INVENT-TITLE.
+           05  FILLER              PIC X(15) VALUE SPACES.
+           05  FILLER              PIC X(17) VALUE "INVENTORY REPORT".
+       01  INVENT-HEADER.
+           05  FILLER              PIC X(1) VALUE SPACES.
+           05  FILLER              PIC X(7) VALUE "NUMBER".
+           05  FILLER              PIC X(25) VALUE "PART NAME".
+           05  FILLER              PIC X(6) VALUE "QTY".
+           05  FILLER              PIC X(8) VALUE "VALUE".
+       01  INVENT-DETAIL.
+           05  FILLER              PIC X(1) VALUE SPACES.
+           05  PART-NUMBER-OUT     PIC X(5).
+           05  FILLER              PIC X(2) VALUE SPACES.
+           05  PART-NAME-OUT       PIC X(23).
+           05  FILLER              PIC X(1) VALUE SPACES.
+           05  QUANTITY-OUT        PIC ZZZ9.
+           05  FILLER              PIC X(2) VALUE SPACES.
+           05  VALUE-OUT           PIC $$$,$$9.99.
+       01  INVENT-TOTAL.
+           05  FILLER              PIC X(2) VALUE SPACES.
+           05  FILLER              PIC X(13) VALUE "TOTAL VALUE".
+           05  TOTAL               PIC $$$$,$$9.99.
+       01  INVENT-FOOTER.
+           05  FOOTER-CONTENT      PIC X(17).
+           05  FOOTER-COUNTER      PIC ZZZ9.
+       01  REORDER-TITLE.
+           05  FILLER              PIC X(15) VALUE SPACES.
+           05  FILLER              PIC X(20) VALUE "REORDER REPORT".
+       01  REORDER-HEADER.
+           05  FILLER              PIC X(1) VALUE SPACES.
+           05  FILLER              PIC X(12) VALUE "PART NUMBER".
+           05  FILLER              PIC X(18) VALUE "PART NAME".
+           05  FILLER              PIC X(16) VALUE "RE-ORDER POINT".
+           05  FILLER              PIC X(15) VALUE "SUPPLIER NAME".
+       01  REORDER-RECORD.
+           05  FILLER              PIC X(5) VALUE SPACES.
+           05  PART-NUMBER-R       PIC X(5).
+           05  FILLER              PIC X(3) VALUE SPACES.
+           05  PART-NAME-R         PIC X(20).
+           05  FILLER              PIC X(1) VALUE SPACES.
+           05  REORDER-POINT-R     PIC ZZ9.
+           05  FILLER              PIC X(10) VALUE SPACES.
+           05  SUPPLIER-NAME-R     PIC X(15).
+       01  OTHER-FIELDS.
+           05  EOF                 PIC X(1) VALUE "N".
+           05  FOUND-RECORD        PIC X(1) VALUE "N".
+           05  RECORD-COUNTER      PIC 9(3) VALUE ZEROS.
+           05  WRITE-COUNTER       PIC 9(3).
+           05  GRAND-TOTAL         PIC 9(9)V99 VALUE ZEROS.
+           05  INVENT-VALUE        PIC 9(5)V99.
+           05  COUNTER             PIC 9(4).
+
+       PROCEDURE DIVISION.
+
+       100-BUILD-REPORTS.
+           PERFORM 200-INITIATE-REPORTS.
+           PERFORM 200-PRINT-REPORTS UNTIL EOF = "Y".
+           PERFORM 200-TERMINATE-REPORTS.
+           STOP RUN.
+
+       200-INITIATE-REPORTS.
+           PERFORM 300-POPULATE-TABLE.
+           PERFORM 300-OPEN-INVENTORY-FILES.
+           INITIALIZE OTHER-FIELDS.
+           PERFORM 300-READ-INVENTORY-FILE.
+           PERFORM 300-PRINT-REPORT-TITLES.
+           PERFORM 300-PRINT-REPORT-HEADERS.
+
+       200-PRINT-REPORTS.
+           COMPUTE INVENT-VALUE = QUANTITY-IN * UNIT-PRICE-IN.
+           PERFORM 300-PRINT-INVENTORY-RECORD.
+           ADD INVENT-VALUE TO GRAND-TOTAL.
+           IF QUANTITY-IN NOT GREATER THAN REORDER-POINT-IN
+               PERFORM 300-INITIALIZE-SUPPLIER-SEARCH
+               PERFORM 300-SEARCH-SUPPLIER
+                   VARYING COUNTER FROM 1 BY 1
+                       UNTIL COUNTER > SUPPLIER-TABLE-LEN
+                       OR FOUND-RECORD = "Y"
+               PERFORM 300-PRINT-REORDER-RECORD.
+           PERFORM 300-READ-INVENTORY-FILE.
+
+       200-TERMINATE-REPORTS.
+           PERFORM 300-PRINT-REPORT-FOOTER.
+           PERFORM 300-CLOSE-INVENTORY-FILES.
+
+       300-POPULATE-TABLE.
+           OPEN INPUT SUPPLIERS-IN.
+           PERFORM 500-READ-SUPPLIERS-FILE.
+           PERFORM 400-BUILD-SUPPLIER-TABLE
+                   UNTIL EOF = "Y".
+           CLOSE SUPPLIERS-IN.
+
+       300-OPEN-INVENTORY-FILES.
+           OPEN INPUT INVENT-IN
+               OUTPUT INVENT-REPORT
+               OUTPUT INVENT-REORDER.
+
+       300-READ-INVENTORY-FILE.
+           READ INVENT-IN AT END MOVE "Y" TO EOF
+               NOT AT END  ADD 1 TO RECORD-COUNTER.
+
+       300-PRINT-REPORT-TITLES.
+           WRITE INVENTORY-OUT FROM INVENT-TITLE
+               AFTER ADVANCING 1   LINES.
+           WRITE REORDER-OUT FROM REORDER-TITLE
+               AFTER ADVANCING 1   LINES.
+
+       300-PRINT-REPORT-HEADERS.
+           WRITE INVENTORY-OUT FROM INVENT-HEADER
+               AFTER ADVANCING 3 LINES.
+           MOVE SPACES TO INVENTORY-OUT.
+           WRITE INVENTORY-OUT.
+           WRITE REORDER-OUT FROM REORDER-HEADER
+               AFTER ADVANCING 2 LINES.
+           MOVE SPACES TO REORDER-OUT.
+           WRITE REORDER-OUT.
+
+       300-PRINT-INVENTORY-RECORD.
+           MOVE PART-NUMBER-IN TO PART-NUMBER-OUT.
+           MOVE PART-NAME-IN TO PART-NAME-OUT.
+           MOVE QUANTITY-IN TO QUANTITY-OUT.
+           MOVE INVENT-VALUE TO VALUE-OUT.
+           WRITE INVENTORY-OUT FROM INVENT-DETAIL.
+           ADD 1 TO WRITE-COUNTER.
+
+       300-PRINT-REORDER-RECORD.
+           MOVE PART-NUMBER-IN TO PART-NUMBER-R.
+           MOVE PART-NAME-IN TO PART-NAME-R.
+           MOVE REORDER-POINT-IN TO REORDER-POINT-R.
+           WRITE REORDER-OUT FROM REORDER-RECORD.
+
+       300-CLOSE-INVENTORY-FILES.
+           CLOSE INVENT-IN
+                 INVENT-REPORT
+                 INVENT-REORDER.
+
+       300-INITIALIZE-SUPPLIER-SEARCH.
+           MOVE SPACES TO SUPPLIER-NAME-R.
+           MOVE "N" TO  FOUND-RECORD.
+
+       300-SEARCH-SUPPLIER.
+           IF SUPPLIER-CODE-IN = SUPPLIER-CODE(COUNTER)
+               MOVE "Y"TO FOUND-RECORD
+               MOVE SUPPLIER-NAME(COUNTER) TO SUPPLIER-NAME-R.
+
+       300-PRINT-REPORT-FOOTER.
+           MOVE "RECORDS READ:" TO FOOTER-CONTENT.
+           MOVE RECORD-COUNTER TO FOOTER-COUNTER.
+           WRITE INVENTORY-OUT FROM INVENT-FOOTER
+                   AFTER ADVANCING 2 LINES.
+           MOVE " RECORDS WRITTEN:" TO FOOTER-CONTENT.
+           MOVE WRITE-COUNTER TO FOOTER-COUNTER.
+           WRITE INVENTORY-OUT FROM INVENT-FOOTER.
+           MOVE GRAND-TOTAL TO TOTAL.
+           WRITE INVENTORY-OUT FROM INVENT-TOTAL
+               AFTER ADVANCING 1 LINES.
+
+
+       400-BUILD-SUPPLIER-TABLE.
+           MOVE RECORD-COUNTER TO SUPPLIER-TABLE-LEN.
+           MOVE SUPPLIER-CODE-IN TO SUPPLIER-CODE(RECORD-COUNTER).
+           MOVE SUPPLIER-NAME-IN TO SUPPLIER-NAME(RECORD-COUNTER).
+           PERFORM 500-READ-SUPPLIERS-FILE.
+
+       500-READ-SUPPLIERS-FILE.
+           READ SUPPLIERS-IN AT END MOVE "Y" TO EOF
+               NOT AT END ADD 1 TO RECORD-COUNTER.
